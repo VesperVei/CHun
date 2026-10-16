@@ -63,6 +63,18 @@ class TransportClosedError(TransportError):
     """Transport 尚未打开或已关闭。"""
 
 
+class RetryError(CHunError):
+    """Script 层自动重试相关基础异常。"""
+
+
+class RetryExhaustedError(RetryError):
+    """达到最大尝试次数仍未成功。"""
+
+
+class RetryableAttemptError(RetryError):
+    """用户可在 Exploit 回调中主动抛出，用于声明“本轮失败，可继续重试”。"""
+
+
 __all__ = [
     "BridgeError",
     "CHunError",
@@ -75,6 +87,9 @@ __all__ = [
     "RegistryError",
     "RegistryNotFoundError",
     "ResolverError",
+    "RetryableAttemptError",
+    "RetryError",
+    "RetryExhaustedError",
     "TransportCapabilityError",
     "TransportClosedError",
     "TransportConfigError",

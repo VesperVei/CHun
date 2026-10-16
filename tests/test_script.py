@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from chun import CHun
+from chun.core.errors import RetryableAttemptError, RetryExhaustedError
 from chun.core.models import FactKind, RecordDomain
 from chun.core.replay import VerificationResult
 from chun.core.registry import EvidenceRegistry
@@ -2660,3 +2661,257 @@ def test_script_gadget_not_found_suggests_compatible_pop_ret_gadgets(
     assert message.index("[extra=1]") < message.index("[extra=2]")
     assert "pop rsi; ret" not in message
     assert "pop rbp; leave; ret" not in message
+
+
+def _install_retry_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[DummySession]:
+    """让 ``from_specs`` 每次返回一个全新 ``DummySession``，模拟新进程。"""
+    created: list[DummySession] = []
+
+    def fake_from_specs(
+        cls: type[CHun], target: TargetSpec, transport: Any
+    ) -> DummySession:
+        session = DummySession(kind=target.kind)
+        created.append(session)
+        return session
+
+    monkeypatch.setattr(script_mod.args, "REMOTE", False)
+    monkeypatch.setattr(script_mod.args, "GDB", False)
+    monkeypatch.setattr(CHun, "from_specs", classmethod(fake_from_specs))
+    return created
+
+
+def test_script_retry_second_attempt_succeeds_and_returns_live_session(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+
+    seen: list[int] = []
+
+    def attempt(s: Any) -> bytes:
+        seen.append(id(s.session))
+        if len(seen) == 1:
+            raise EOFError("bogus address, process died")
+        return b"flag{win}"
+
+    result = entry.retry(attempt, times=10, success=lambda r: b"flag{" in r.value)
+
+    assert seen == [id(created[0]), id(created[1])]
+    assert len(created) == 2
+    assert result.success is True
+    assert result.attempts == 2
+    assert result.session is created[1]
+    assert entry.session is created[1]
+    assert created[0].close_calls == 1
+    assert created[1].close_calls == 0
+
+
+def test_script_retry_recreates_fresh_process_each_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+
+    def attempt(s: Any) -> str:
+        raise EOFError("retry me")
+
+    with pytest.raises(RetryExhaustedError):
+        entry.retry(attempt, times=3)
+
+    assert len(created) == 3
+    assert all(session.reconnect_calls == 0 for session in created)
+    assert all(session.close_calls == 1 for session in created)
+    assert created[0] is not created[1] is not created[2]
+
+
+def test_script_retry_reports_exhaustion_without_returning_closed_session(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+
+    def attempt(s: Any) -> None:
+        raise EOFError("always dead")
+
+    with pytest.raises(RetryExhaustedError) as error:
+        entry.retry(attempt, times=4)
+
+    assert len(created) == 4
+    assert "4" in str(error.value)
+    assert error.value.__cause__ is not None
+    assert isinstance(error.value.__cause__, EOFError)
+    assert all(session.close_calls == 1 for session in created)
+    assert entry._session is None
+
+
+def test_script_retry_success_callback_receives_current_session(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+    observed: list[Any] = []
+
+    def attempt(s: Any) -> int:
+        return 7
+
+    def verify(result: Any) -> bool:
+        observed.append(result.session)
+        return True
+
+    result = entry.retry(attempt, times=3, success=verify)
+
+    assert observed == [created[0]]
+    assert result.session is created[0]
+    assert result.value == 7
+    assert created[0].close_calls == 0
+
+
+def test_script_retry_lets_expected_eof_pass_but_propagates_real_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+
+    def attempt(s: Any) -> None:
+        raise AttributeError("typo in exp code")
+
+    with pytest.raises(AttributeError):
+        entry.retry(attempt, times=5)
+
+
+def test_script_retry_timeout_is_retryable_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+    calls: list[int] = []
+
+    def attempt(s: Any) -> bytes:
+        calls.append(1)
+        if len(calls) < 3:
+            raise TimeoutError("recv timed out")
+        return b"marker"
+
+    result = entry.retry(attempt, times=5, success=lambda r: r.value == b"marker")
+
+    assert len(calls) == 3
+    assert len(created) == 3
+    assert result.session is created[2]
+    assert result.attempts == 3
+
+
+def test_script_retry_custom_retry_on_narrows_catch_set(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+
+    def attempt(s: Any) -> None:
+        raise EOFError("not allowed to retry")
+
+    with pytest.raises(EOFError):
+        entry.retry(attempt, times=3, retry_on=(ValueError,))
+
+
+def test_script_retry_user_can_raise_retryable_attempt_error(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+    seen: list[int] = []
+
+    def attempt(s: Any) -> bytes:
+        seen.append(1)
+        if len(seen) == 1:
+            raise RetryableAttemptError("address high byte not zero")
+        return b"ok"
+
+    result = entry.retry(attempt, times=3, success=lambda r: r.value == b"ok")
+
+    assert result.success is True
+    assert result.session is created[1]
+
+
+def test_script_retry_respects_times_and_stops_immediately_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+    calls: list[int] = []
+
+    def attempt(s: Any) -> bytes:
+        calls.append(1)
+        return b"ok"
+
+    result = entry.retry(attempt, times=50, success=lambda r: True)
+
+    assert len(calls) == 1
+    assert len(created) == 1
+    assert result.attempts == 1
+
+
+def test_script_retry_rejects_invalid_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+
+    with pytest.raises(ValueError):
+        entry.retry(lambda s: None, times=0)
+    with pytest.raises(TypeError):
+        entry.retry("not callable")  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        entry.retry(lambda s: None, success="nope")  # type: ignore[arg-type]
+
+
+def test_script_retry_leaves_unstarted_entry_usable_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    entry = CHun.script("./challenge")
+
+    def attempt(s: Any) -> bytes:
+        return b"ok"
+
+    result = entry.retry(attempt, times=1, success=lambda r: True)
+
+    assert entry.session is result.session is created[0]
+    result.session.io.interactive()
+    assert ("interactive", (), {}) in created[0].io.calls
+
+
+def test_script_retry_warns_in_gdb_mode_but_still_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    created = _install_retry_sessions(monkeypatch)
+    monkeypatch.setattr(script_mod.args, "GDB", True)
+    entry = CHun.script("./challenge")
+    calls: list[int] = []
+
+    def attempt(s: Any) -> bytes:
+        calls.append(1)
+        if len(calls) == 1:
+            raise EOFError("die")
+        return b"ok"
+
+    with caplog.at_level("WARNING"):
+        result = entry.retry(attempt, times=5, success=lambda r: r.value == b"ok")
+
+    assert result.success is True
+    assert result.session is created[1]
+    assert any("GDB 模式" in record.message for record in caplog.records)

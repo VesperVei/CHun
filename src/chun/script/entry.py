@@ -13,6 +13,7 @@ from ..core.models import ContextKind, RecordDomain, TargetSpec
 from .constants import DEFAULT_SCRIPT_TERMINAL, HEX_POINTER_RE
 from .lazy import LazyELFProxy
 from .replay import ReplayScriptMixin
+from .retry import RetryScriptMixin
 
 if TYPE_CHECKING:
     from ..bridges.gdb import PwntoolsGdbBridge
@@ -46,7 +47,7 @@ def _coerce_record_domain(domain: RecordDomain | str | None) -> RecordDomain:
     return RecordDomain(normalized)
 
 
-class ScriptEntry(ReplayScriptMixin):
+class ScriptEntry(ReplayScriptMixin, RetryScriptMixin):
     """为手写 exp 保留薄包装入口。"""
 
     def __init__(

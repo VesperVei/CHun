@@ -9,6 +9,7 @@ _COMPAT_EXPORTS = {"ELF", "ROP", "args", "context", "gdb", "log", "pause"}
 _MODEL_EXPORTS = {"FmtTaskPolicy", "FmtWriteStrategy"}
 _CONSTANT_EXPORTS = {"DEFAULT_SCRIPT_TERMINAL"}
 _ENTRY_EXPORTS = {"ScriptEntry"}
+_RETRY_EXPORTS = {"RetryResult"}
 
 __all__ = [
     "DEFAULT_SCRIPT_TERMINAL",
@@ -16,6 +17,7 @@ __all__ = [
     "FmtTaskPolicy",
     "FmtWriteStrategy",
     "ROP",
+    "RetryResult",
     "ScriptEntry",
     "args",
     "context",
@@ -34,6 +36,8 @@ def __getattr__(name: str) -> Any:
         return getattr(import_module(".constants", __name__), name)
     if name in _ENTRY_EXPORTS:
         return getattr(import_module(".entry", __name__), name)
+    if name in _RETRY_EXPORTS:
+        return getattr(import_module(".retry", __name__), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

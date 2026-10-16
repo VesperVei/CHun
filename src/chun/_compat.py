@@ -183,6 +183,9 @@ class _FallbackLog:
     def error(self, message: str) -> None:
         LOGGER.error(message)
 
+    def failure(self, message: str) -> None:
+        LOGGER.error(message)
+
     def debug(self, message: str) -> None:
         LOGGER.debug(message)
 
