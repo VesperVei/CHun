@@ -303,12 +303,12 @@ ts          2026-04-22T12:34:56+00:00
 若 libc base 是自己计算得到、并非来自 `recv_leak()` 记录，可直接确认：
 
 ```python
-s.infer.set_libc_base(0x7f3a2c875000)          # 直接写回 libc.base
-s.libc_base = 0x7f3a2c875000                    # 脚本态属性写入语法糖
-s.set_libc_base(0x7f3a2c875000, aligned=False)  # 保留未对齐原值
+session.infer.set_libc_base(0x7f3a2c875000)          # 直接写回 libc.base
+session.libc_base = 0x7f3a2c875000                   # session 属性写入语法糖
+session.infer.set_libc_base(0x7f3a2c875000, aligned=False)  # 保留未对齐原值
 ```
 
-`set_libc_base(base, *, fact_name="libc.base", source="manual", aligned=True)` 默认按 `page_size` 页对齐并在未对齐时 `log.warning`，返回 `BaseInferenceResult`。`session.libc_base = ...` 与 `session.infer.set_libc_base(...)` 等价。
+`set_libc_base(base, *, fact_name="libc.base", source="manual", aligned=True)` 默认按 `page_size` 页对齐并在未对齐时 `log.warning`，返回 `BaseInferenceResult`。`session.libc_base = ...` 与 `session.infer.set_libc_base(...)` 等价；脚本态 `t.libc_base` 仅提供读取。
 
 `session.infer.libc_candidates_from_leaks()` 在注入 `libc_catalog` 后还会：
 

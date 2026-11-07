@@ -28,10 +28,10 @@ class DynELFResolver:
     def lookup(
         self,
         symbol: str,
+        pointer: int | None,
         *,
         leak_primitive: Callable[..., bytes | bytearray | None] | None = None,
         memleak: object | None = None,
-        pointer: int | None,
         lib: str | None = None,
         elf: object | None = None,
         fact_name: str | None = None,
@@ -39,6 +39,12 @@ class DynELFResolver:
         memleak_cls: type | None = None,
         dynelf_cls: type | None = None,
     ) -> ResolvedSymbolResult:
+        """使用 pwntools DynELF 查找符号并记录结构化解析事实。
+
+        ``pointer`` 是目标 ELF 中可用于 DynELF 定位的已知指针；
+        ``leak_primitive`` 与 ``memleak`` 二选一。解析成功后，地址会以
+        ``SYMBOL_ADDRESS`` fact 写入 registry，并返回包含该 fact 的结果对象。
+        """
         if memleak is None:
             if leak_primitive is None:
                 raise ResolverError("DynELF 解析需要 leak_primitive 或现成的 MemLeak 对象。")

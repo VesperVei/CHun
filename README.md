@@ -92,7 +92,7 @@ c
 
 t.sla(b"menu> ", b"1")
 puts = t.recv_leak("puts", delim=b"puts: ", mode="hex")
-t.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+t.resolve.libc_base_from_elf_symbol("puts", "puts")
 print(hex(puts), hex(t.libc_base))
 
 t.fmt.set_offset(6, source="manual")
@@ -155,7 +155,7 @@ session = CHun.process("./challenge")
 
 # ret2libc
 session.rec.record_symbol_leak("puts", 0x7F1234580000, source="got")
-# session.resolve.libc_base_from_elf_symbol("puts", libc_elf=libc, symbol="puts")
+# session.resolve.libc_base_from_elf_symbol("puts", "puts", libc_elf=libc)
 
 # 交互式 GDB attach
 # session.dbg.attach(script="b *main\nc")
@@ -163,8 +163,8 @@ session.rec.record_symbol_leak("puts", 0x7F1234580000, source="got")
 # blind leak -> DynELF
 result = session.resolve.symbol_via_dynelf(
     "system",
+    0x601018,
     leak_primitive=lambda addr, size=8: b"\x00" * size,
-    pointer=0x601018,
     lib="libc",
 )
 print(hex(result.address))

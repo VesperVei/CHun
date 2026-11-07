@@ -22,8 +22,8 @@ def test_ret2libc_workflow_uses_session_registry_inference_and_pwntools_style_sy
     )
     result = session.resolve.libc_base_from_elf_symbol(
         "puts",
-        elf=DummyLibc(sym={"puts": 0x80000}),
-        symbol="puts",
+        "puts",
+        libc_elf=DummyLibc(sym={"puts": 0x80000}),
     )
 
     fact = session.registry.get_fact("libc.base")
@@ -49,7 +49,7 @@ def test_ret2libc_workflow_can_use_session_bound_libc_elf() -> None:
         source="got",
         confidence=0.90,
     )
-    result = session.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+    result = session.resolve.libc_base_from_elf_symbol("puts", "puts")
 
     fact = session.registry.get_fact("libc.base")
     assert fact is not None

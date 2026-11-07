@@ -163,6 +163,11 @@ class ResolveService:
         chunk_size: int = 8,
         memleak_cls: type | None = None,
     ) -> MemLeakAdapter:
+        """把原始内存泄漏函数包装为可供 DynELF 使用的 MemLeak 适配器。
+
+        ``leak_primitive`` 应接收地址以及可选的读取长度，并返回读取到的
+        bytes；适配器会把泄漏过程中的结果写入当前 session registry。
+        """
         return self.memleak_adapter_cls(
             leak_primitive,
             self.registry,
@@ -174,10 +179,10 @@ class ResolveService:
     def symbol_via_dynelf(
         self,
         symbol: str,
+        pointer: int | None,
         *,
         leak_primitive: Callable[..., bytes | bytearray | None] | None = None,
         memleak: object | None = None,
-        pointer: int | None,
         lib: str | None = None,
         elf: object | None = None,
         fact_name: str | None = None,
@@ -185,6 +190,13 @@ class ResolveService:
         memleak_cls: type | None = None,
         dynelf_cls: type | None = None,
     ) -> ResolvedSymbolResult:
+        """通过 DynELF 解析运行时符号地址并写入 registry。
+
+        ``pointer`` 是 DynELF 用来定位 ELF 的已知指针。``leak_primitive``
+        与 ``memleak`` 二选一：前者由本方法创建 MemLeak，后者直接复用现成
+        的 MemLeak 对象。解析结果默认写入
+        ``resolved.<library-or-global>.<symbol>`` fact。
+        """
         return self.dynelf_resolver.lookup(
             symbol,
             leak_primitive=leak_primitive,
@@ -201,23 +213,27 @@ class ResolveService:
     def libc_base_from_elf_symbol(
         self,
         observation_name: str,
+        symbol: str,
         *,
         libc_elf: SupportsSym | None = None,
-        elf: SupportsSym | None = None,
-        symbol: str,
         fact_name: str = "libc.base",
     ) -> BaseInferenceResult:
+        """根据 libc ELF 中的符号偏移推导并记录 ``libc.base``。
+
+        ``observation_name`` 必须对应 registry 中已记录的泄漏地址，
+        ``symbol`` 是该地址对应的 libc 符号名。优先使用显式传入的
+        ``libc_elf``，否则使用当前 session 绑定的 ``libc_elf``；该对象必须
+        提供 ``.sym`` 映射。推导结果会委托给 inference 层并写入 fact。
+        """
         candidate = (
             libc_elf
             if libc_elf is not None
-            else elf
-            if elf is not None
             else self._session_libc_elf()
             if self._session_libc_elf() is not None
-            else self._session_elf()
+            else None
         )
         if candidate is None:
-            raise ResolverError("缺少可用的 libc_elf / elf，请显式传参或先绑定到 session。")
+            raise ResolverError("缺少可用的 libc_elf，请显式传参或先绑定到 session。")
         if not hasattr(candidate, "sym"):
             raise ResolverError("libc_elf 需要提供 .sym 映射。")
         symbol_offset = int(candidate.sym[symbol])
@@ -230,11 +246,17 @@ class ResolveService:
     def pie_base_from_elf_symbol(
         self,
         observation_name: str,
+        symbol: str,
         *,
         elf: SupportsSym | None = None,
-        symbol: str,
         fact_name: str = "elf.base",
     ) -> BaseInferenceResult:
+        """根据主 ELF 中的符号偏移推导并记录 ``elf.base``。
+
+        ``observation_name`` 必须对应 registry 中已记录的泄漏地址，
+        ``symbol`` 是该地址对应的 ELF 符号名。优先使用显式传入的 ``elf``，
+        否则使用当前 session 绑定的主 ELF；该对象必须提供 ``.sym`` 映射。
+        """
         candidate = elf if elf is not None else self._session_elf()
         if candidate is None:
             raise ResolverError("缺少可用的 elf，请显式传参或先绑定到 session。")
@@ -248,7 +270,12 @@ class ResolveService:
         )
 
     def symbol(self, name: str) -> int:
-        """基于已确认的 libc base 按 mix 模式计算 libc 绝对地址。"""
+        """根据已确认的 libc base 解析符号的运行时绝对地址。
+
+        符号解析按可信本地 libc 缓存、已绑定 libc ELF、libc catalog 的顺序
+        尝试，并支持常见符号后缀和 ``str_bin_sh`` alias。要求 registry 中
+        已存在 ``libc.base``，且至少有一个可信的 libc 符号来源。
+        """
         base_value = self._read_libc_base()
         normalized = self._normalize_symbol_query(name)
 

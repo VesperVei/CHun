@@ -1015,7 +1015,7 @@ def test_resolve_uses_session_bound_libc_elf_for_base_inference() -> None:
         domain=RecordDomain.LIBC,
         source="got",
     )
-    result = session.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+    result = session.resolve.libc_base_from_elf_symbol("puts", "puts")
 
     assert session.libc_elf is libc
     assert session.rec.require_context("libc.path").value == "./libc.so.6"
@@ -1031,8 +1031,8 @@ def test_resolve_libc_base_from_elf_symbol_raises_without_explicit_or_session_li
         source="got",
     )
 
-    with pytest.raises(ResolverError, match="缺少可用的 libc_elf / elf"):
-        session.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+    with pytest.raises(ResolverError, match="缺少可用的 libc_elf"):
+        session.resolve.libc_base_from_elf_symbol("puts", "puts")
 
 
 def test_resolve_pie_base_from_elf_symbol_raises_without_explicit_or_session_elf() -> None:
@@ -1045,7 +1045,7 @@ def test_resolve_pie_base_from_elf_symbol_raises_without_explicit_or_session_elf
     )
 
     with pytest.raises(ResolverError, match="缺少可用的 elf"):
-        session.resolve.pie_base_from_elf_symbol("main", symbol="main")
+        session.resolve.pie_base_from_elf_symbol("main", "main")
 
 
 def test_resolve_prefers_explicit_symbol_source_over_session_binding() -> None:
@@ -1061,8 +1061,8 @@ def test_resolve_prefers_explicit_symbol_source_over_session_binding() -> None:
     )
     result = session.resolve.libc_base_from_elf_symbol(
         "puts",
+        "puts",
         libc_elf=explicit_libc,
-        symbol="puts",
     )
 
     assert result.value == 0x7F1234500000

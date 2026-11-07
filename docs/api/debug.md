@@ -37,10 +37,10 @@
 `session.resolve` 是围绕 pwntools 能力封装的解析入口：
 
 - `memleak(leak_primitive, ...)`
-- `symbol_via_dynelf(symbol, ..., pointer=...)`
+- `symbol_via_dynelf(symbol, pointer, *, leak_primitive=... | memleak=..., ...)`
 - `symbol(name)`
-- `libc_base_from_elf_symbol(observation_name, libc_elf=..., symbol=...)`
-- `pie_base_from_elf_symbol(observation_name, elf=..., symbol=...)`
+- `libc_base_from_elf_symbol(observation_name, symbol, *, libc_elf=None, fact_name=...)`
+- `pie_base_from_elf_symbol(observation_name, symbol, *, elf=None, fact_name=...)`
 
 它负责把：
 
@@ -88,16 +88,12 @@
 
 ```python
 session.rec.record_symbol_leak("puts", leak, source="got")
-result = session.resolve.libc_base_from_elf_symbol(
-    "puts",
-    libc_elf=libc,
-    symbol="puts",
-)
+result = session.resolve.libc_base_from_elf_symbol("puts", "puts", libc_elf=libc)
 
 # script 场景：
 # t = CHun.script("./challenge", libc="./libc.so.6")
 # t.start()
-# result = t.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+# result = t.resolve.libc_base_from_elf_symbol("puts", "puts")
 ```
 
 ### blind leak -> DynELF
@@ -105,8 +101,8 @@ result = session.resolve.libc_base_from_elf_symbol(
 ```python
 resolved = session.resolve.symbol_via_dynelf(
     "system",
+    0x601018,
     leak_primitive=leak_func,
-    pointer=0x601018,
     lib="libc",
 )
 ```

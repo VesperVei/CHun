@@ -154,7 +154,7 @@ print(hex(puts_addr))
 
 ```python
 t = CHun.script("./challenge").start()
-t.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+t.resolve.libc_base_from_elf_symbol("puts", "puts")
 print(hex(t.libc_base))
 print(hex(t.resolve.symbol("str_bin_sh")))
 ```

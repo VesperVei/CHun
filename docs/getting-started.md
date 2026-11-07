@@ -80,10 +80,10 @@ t.gdb("b *main\nc")
 t.sla(b"menu> ", b"1")
 leak = 0x555555555234
 t.rec.record_symbol_leak("main", leak, domain=RecordDomain.ELF, source="leak")
-t.resolve.pie_base_from_elf_symbol("main", symbol="main")
+t.resolve.pie_base_from_elf_symbol("main", "main")
 print(hex(t.elf_base))
 print(hex(t.elf.sym["main"]))
-base = t.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+base = t.resolve.libc_base_from_elf_symbol("puts", "puts")
 print(hex(base.value))
 ```
 
@@ -163,8 +163,8 @@ session = CHun.process("./challenge")
 # DynELF
 resolved = session.resolve.symbol_via_dynelf(
     "system",
+    0x601018,
     leak_primitive=lambda addr, size=8: b"\x00" * size,
-    pointer=0x601018,
     lib="libc",
 )
 print(hex(resolved.address))
@@ -179,12 +179,12 @@ session = CHun.process("./challenge")
 
 # ret2libc
 session.rec.record_symbol_leak("puts", 0x7F1234580000, source="got")
-# base = session.resolve.libc_base_from_elf_symbol("puts", libc_elf=libc, symbol="puts")
+# base = session.resolve.libc_base_from_elf_symbol("puts", "puts", libc_elf=libc)
 # print(hex(base.value))
 
 # blind leak -> DynELF
 blind = CHun.blind(lambda: object())
-# blind.resolve.symbol_via_dynelf("system", leak_primitive=leak_func, pointer=0x601018)
+# blind.resolve.symbol_via_dynelf("system", 0x601018, leak_primitive=leak_func)
 
 # fmt planning
 # session.bind_binaries(elf=elf, libc_elf=libc)

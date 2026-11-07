@@ -115,7 +115,7 @@ t.sla(b"menu> ", b"1")
 t.rec.record_symbol_leak("puts", 0x7F1234580000, source="got")
 leak = t.recv_leak("puts", delim=b"puts: ")
 print(hex(leak))
-t.resolve.libc_base_from_elf_symbol("puts", symbol="puts")
+t.resolve.libc_base_from_elf_symbol("puts", "puts")
 print(hex(t.libc_base))
 
 session = t.session
@@ -137,8 +137,8 @@ t.gdb("b *main\nc")
 - `t.start()` 会通过 `session.bind_binaries()` 绑定脚本态已加载的 `t.elf` / `t.libc`
 - `t.rec` / `t.infer` / `t.resolve` / `t.dbg` / `t.crash` 会显式转发到当前 session
 - `t.session` 是属性，不是方法；用于直接访问当前已启动的完整 `CHunSession`
-- `t.resolve.libc_base_from_elf_symbol(..., symbol="puts")` 在脚本态可直接复用默认 `t.libc`，无需重复传 `libc_elf=t.libc`
-- `t.resolve.pie_base_from_elf_symbol(..., symbol="main")` 在脚本态可直接复用默认 `t.elf`
+- `t.resolve.libc_base_from_elf_symbol(observation_name, "puts")` 在脚本态可直接复用默认 `t.libc`，无需重复传 `libc_elf=t.libc`
+- `t.resolve.pie_base_from_elf_symbol(observation_name, "main")` 在脚本态可直接复用默认 `t.elf`
 - `t.infer.search_libc()` 会从事实层自动扫描 `RecordDomain.LIBC` 的 symbol leak，并优先使用 `session.elf` / 已同步的标量 context 推断架构
 - `t.infer.search_libc(index=...)` 可在多候选场景下按候选排名静默确认目标版本，并自动回写 `libc.version + libc.base`
 - `t.recv_leak(name, ...)` 会在脚本 façade 层完成“接收 -> 解析 -> offset 修正 -> `record_symbol_leak()` 回写”
@@ -174,8 +174,7 @@ t.gdb("b *main\nc")
 - `t.retry(...)` 达到上限会抛出 `RetryExhaustedError`，不会静默返回已关闭的会话
 - `t.retry(...)` 在 `GDB` 模式下会 warning：每轮都会重新拉起调试器，建议爆破阶段关闭 GDB
 - `t.libc_base` / `t.libc_version` 以及 `t.session.libc_base` / `t.session.libc_version` 提供快捷读取；若尚未确认则抛 `RuntimeError`
-- `t.libc_base = 0x...` / `t.session.libc_base = 0x...` / `t.set_libc_base(0x..., aligned=False)` 可直接确认 libc base，适用于自己计算而非 `recv_leak()` 得到的场景
-- 题目已给 libc 时，`t.libc_offset("puts")` 查本地 libc 静态偏移；`t.libc_base_from_leak("puts@got", symbol="puts")` 会用已记录的 leak + 本地 libc offset 推导并写回 `libc.base`
+- `t.libc_base` / `t.session.libc_base` 提供已确认 libc base 的读取；需要手工写入时使用 `t.infer.set_libc_base(0x..., aligned=False)`
 - `t.resolve.symbol("str_bin_sh")` / `t.resolve.symbol("puts@got")` 会自动做后缀剥离和 alias 归一化；已绑定 `t.libc` 时优先走本地 `libc_elf + libc.base`，否则回退到 `libc.version + catalog`
 - 访问 `t.session` / `t.rec` / `t.infer` / `t.resolve` / `t.dbg` / `t.crash` 前必须先 `t.start()`；否则抛 `RuntimeError`
 - 高频交互方法可直接使用 `t.sendlineafter()` / `t.recvline()` / `t.interactive()` 及其 alias

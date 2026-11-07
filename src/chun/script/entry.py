@@ -406,39 +406,6 @@ class ScriptEntry(ReplayScriptMixin, RetryScriptMixin):
         """返回当前 session 中已确认的 libc base。"""
         return self.session.libc_base
 
-    @libc_base.setter
-    def libc_base(self, value: int) -> None:
-        """手工确认 libc base，等价于 `self.infer.set_libc_base(value)`。"""
-        self.infer.set_libc_base(value)
-
-    def set_libc_base(self, base: int, *, aligned: bool = True) -> int:
-        """显式确认 libc base，适用于自己计算得到、未经过 recv_leak 的场景。"""
-        result = self.infer.set_libc_base(base, aligned=aligned)
-        return result.aligned_base
-
-    def libc_offset(self, symbol: str) -> int:
-        """查询已绑定本地 libc 中某符号的静态偏移。"""
-        libc = self.libc
-        if libc is None:
-            raise ValueError(
-                "当前脚本未绑定 libc，请通过 CHun.script(..., libc=...) 指定。"
-            )
-        return int(libc.sym[symbol])
-
-    def libc_base_from_leak(
-        self,
-        obs_name: str,
-        *,
-        symbol: str | None = None,
-    ) -> int:
-        """用已记录的 symbol leak observation 与本地 libc offset 推导并写回 libc base。"""
-        result = self.resolve.libc_base_from_elf_symbol(
-            obs_name,
-            libc_elf=self.libc,
-            symbol=symbol if symbol is not None else obs_name,
-        )
-        return result.aligned_base
-
     @property
     def elf_base(self) -> int:
         """返回当前 session 中已确认的 PIE base。"""
