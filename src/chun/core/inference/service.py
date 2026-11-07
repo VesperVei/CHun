@@ -119,6 +119,59 @@ class InferenceService:
             domain=RecordDomain.ELF,
         )
 
+    def set_libc_base(
+        self,
+        base: int,
+        *,
+        fact_name: str = "libc.base",
+        source: str = "manual",
+        aligned: bool = True,
+        overwrite: bool = True,
+    ) -> BaseInferenceResult:
+        """直接确认 libc base，适用于手工计算或外部已知 base 的场景。"""
+        if not isinstance(base, int):
+            raise InferenceInputError("libc base 必须是整数地址。")
+        if base < 0:
+            raise InferenceInputError("libc base 不能为负数。")
+
+        raw_base = base
+        if aligned:
+            aligned_base = raw_base - (raw_base % self.page_size)
+        else:
+            aligned_base = raw_base
+
+        if aligned and raw_base & 0xFFF:
+            log.warning(
+                f"计算 libc 为：{hex(raw_base)}，可能不是正确的 libc。"
+                f"（{hex(raw_base)} 未页对齐）"
+            )
+
+        stored_fact = self.registry.record_fact(
+            fact_name,
+            aligned_base,
+            kind=FactKind.BASE_ADDRESS,
+            domain=RecordDomain.LIBC,
+            source=source,
+            confidence=1.0,
+            evidence=[],
+            tags=["base", RecordDomain.LIBC.value],
+            metadata={
+                "raw_base": raw_base,
+                "aligned_base": aligned_base,
+                "symbol_offset": 0,
+                "observation": None,
+            },
+            overwrite=overwrite,
+        )
+        return BaseInferenceResult(
+            fact_name=fact_name,
+            observation_name="",
+            symbol_offset=0,
+            raw_base=raw_base,
+            aligned_base=aligned_base,
+            stored_fact=stored_fact,
+        )
+
     def libc_candidates_from_leaks(
         self,
         leaks: dict[str, int],

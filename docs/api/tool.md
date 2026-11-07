@@ -174,6 +174,8 @@ t.gdb("b *main\nc")
 - `t.retry(...)` 达到上限会抛出 `RetryExhaustedError`，不会静默返回已关闭的会话
 - `t.retry(...)` 在 `GDB` 模式下会 warning：每轮都会重新拉起调试器，建议爆破阶段关闭 GDB
 - `t.libc_base` / `t.libc_version` 以及 `t.session.libc_base` / `t.session.libc_version` 提供快捷读取；若尚未确认则抛 `RuntimeError`
+- `t.libc_base = 0x...` / `t.session.libc_base = 0x...` / `t.set_libc_base(0x..., aligned=False)` 可直接确认 libc base，适用于自己计算而非 `recv_leak()` 得到的场景
+- 题目已给 libc 时，`t.libc_offset("puts")` 查本地 libc 静态偏移；`t.libc_base_from_leak("puts@got", symbol="puts")` 会用已记录的 leak + 本地 libc offset 推导并写回 `libc.base`
 - `t.resolve.symbol("str_bin_sh")` / `t.resolve.symbol("puts@got")` 会自动做后缀剥离和 alias 归一化；已绑定 `t.libc` 时优先走本地 `libc_elf + libc.base`，否则回退到 `libc.version + catalog`
 - 访问 `t.session` / `t.rec` / `t.infer` / `t.resolve` / `t.dbg` / `t.crash` 前必须先 `t.start()`；否则抛 `RuntimeError`
 - 高频交互方法可直接使用 `t.sendlineafter()` / `t.recvline()` / `t.interactive()` 及其 alias

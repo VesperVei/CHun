@@ -163,6 +163,66 @@ def test_libc_base_inference_does_not_warn_when_raw_base_is_page_aligned(
     assert warnings == []
 
 
+def test_set_libc_base_records_fact_directly() -> None:
+    registry = EvidenceRegistry()
+    infer = InferenceService(registry)
+
+    result = infer.set_libc_base(0x7F1234500000)
+
+    assert result.raw_base == 0x7F1234500000
+    assert result.aligned_base == 0x7F1234500000
+    assert result.observation_name == ""
+    fact = registry.get_fact("libc.base")
+    assert fact is not None
+    assert fact.value == 0x7F1234500000
+    assert fact.kind is FactKind.BASE_ADDRESS
+    assert fact.domain is RecordDomain.LIBC
+    assert fact.source == "manual"
+
+
+def test_set_libc_base_aligns_and_warns_on_unaligned_input(monkeypatch) -> None:
+    registry = EvidenceRegistry()
+    infer = InferenceService(registry)
+    warnings: list[str] = []
+    monkeypatch.setattr(inference_service_mod.log, "warning", warnings.append)
+
+    result = infer.set_libc_base(0x7F123456789A)
+
+    assert result.raw_base == 0x7F123456789A
+    assert result.aligned_base == 0x7F1234567000
+    assert registry.require_int_fact("libc.base") == 0x7F1234567000
+    assert len(warnings) == 1
+
+
+def test_set_libc_base_can_keep_unaligned_value(monkeypatch) -> None:
+    registry = EvidenceRegistry()
+    infer = InferenceService(registry)
+    warnings: list[str] = []
+    monkeypatch.setattr(inference_service_mod.log, "warning", warnings.append)
+
+    result = infer.set_libc_base(0x7F123456789A, aligned=False)
+
+    assert result.aligned_base == 0x7F123456789A
+    assert registry.require_int_fact("libc.base") == 0x7F123456789A
+    assert warnings == []
+
+
+def test_set_libc_base_rejects_negative_value() -> None:
+    infer = InferenceService(EvidenceRegistry())
+
+    with pytest.raises(InferenceInputError):
+        infer.set_libc_base(-1)
+
+
+def test_session_libc_base_setter_records_fact() -> None:
+    session = build_session()
+
+    session.libc_base = 0x7F0000000000
+
+    assert session.libc_base == 0x7F0000000000
+    assert session.rec.require_int_fact("libc.base") == 0x7F0000000000
+
+
 def test_libc_candidates_from_leaks_requires_catalog_dependency() -> None:
     registry = EvidenceRegistry()
     infer = InferenceService(registry)

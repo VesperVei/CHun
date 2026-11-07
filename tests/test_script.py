@@ -1179,6 +1179,81 @@ def test_script_libc_base_raises_when_missing(
         _ = entry.libc_base
 
 
+def test_script_libc_offset_and_base_from_leak_use_bound_libc(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    session = DummySession(kind="process")
+    registry = EvidenceRegistry()
+    libc = SimpleNamespace(path="./libc.so.6", sym={"puts": 0x80000})
+    session.rec = registry
+    session.libc_elf = libc
+    session.bind_binaries = lambda **kwargs: session  # type: ignore[assignment]
+    calls: list[tuple[str, object, str | None]] = []
+
+    def fake_libc_base_from_elf_symbol(
+        obs_name: str,
+        *,
+        libc_elf: Any = None,
+        symbol: str,
+    ) -> Any:
+        calls.append((obs_name, libc_elf, symbol))
+        return type("Result", (), {"aligned_base": 0x7F1234500000})()
+
+    session.resolve = SimpleNamespace(
+        libc_base_from_elf_symbol=fake_libc_base_from_elf_symbol
+    )
+
+    def fake_from_specs(
+        cls: type[CHun], target: TargetSpec, transport: Any
+    ) -> DummySession:
+        return session
+
+    monkeypatch.setattr(script_mod.args, "REMOTE", False)
+    monkeypatch.setattr(script_mod.args, "GDB", False)
+    monkeypatch.setattr(CHun, "from_specs", classmethod(fake_from_specs))
+
+    entry = CHun.script("./challenge", libc="./libc.so.6").start()
+    entry._libc = libc
+
+    assert entry.libc_offset("puts") == 0x80000
+    base = entry.libc_base_from_leak("puts@got", symbol="puts")
+
+    assert base == 0x7F1234500000
+    assert calls == [("puts@got", libc, "puts")]
+
+
+def test_script_libc_base_setter_forwards_to_infer(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pwntools_env: dict[str, Any],
+) -> None:
+    session = DummySession(kind="process")
+    session.rec = EvidenceRegistry()
+    calls: list[tuple[int, bool]] = []
+
+    def fake_set_libc_base(base: int, *, aligned: bool = True) -> Any:
+        calls.append((base, aligned))
+        return type("Result", (), {"aligned_base": base})()
+
+    session.infer = SimpleNamespace(set_libc_base=fake_set_libc_base)
+
+    def fake_from_specs(
+        cls: type[CHun], target: TargetSpec, transport: Any
+    ) -> DummySession:
+        return session
+
+    monkeypatch.setattr(script_mod.args, "REMOTE", False)
+    monkeypatch.setattr(script_mod.args, "GDB", False)
+    monkeypatch.setattr(CHun, "from_specs", classmethod(fake_from_specs))
+
+    entry = CHun.script("./challenge").start()
+    entry.libc_base = 0x7F0000000000
+    returned = entry.set_libc_base(0x7F0000010000, aligned=False)
+
+    assert calls == [(0x7F0000000000, True), (0x7F0000010000, False)]
+    assert returned == 0x7F0000010000
+
+
 def test_script_context_manager_opens_and_closes_session(
     monkeypatch: pytest.MonkeyPatch,
     fake_pwntools_env: dict[str, Any],

@@ -281,6 +281,11 @@ class CHunSession:
         except TypeError as exc:
             raise RuntimeError("libc.base 已存在，但其值不是整数。") from exc
 
+    @libc_base.setter
+    def libc_base(self, value: int) -> None:
+        """手工确认 libc base，等价于 `infer.set_libc_base(value)`。"""
+        self.infer.set_libc_base(value)
+
     @property
     def libc_version(self) -> str:
         """返回当前 session 中已确认的 libc 版本名。"""

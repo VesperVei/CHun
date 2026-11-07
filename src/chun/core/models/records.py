@@ -159,11 +159,11 @@ class BaseInferenceResult:
     """最小 inference 闭环返回值。"""
 
     fact_name: str
-    observation_name: str
-    symbol_offset: int
-    raw_base: int
-    aligned_base: int
-    stored_fact: Fact
+    observation_name: str = ""
+    symbol_offset: int = 0
+    raw_base: int = 0
+    aligned_base: int = 0
+    stored_fact: Fact | None = None
 
     @property
     def value(self) -> int:
